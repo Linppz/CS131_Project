@@ -1,13 +1,13 @@
 **Team Number:** 
 
-	21
+21
 
 **Team Members:**
 
 * **Ryan Yang** (ryang097)  
 * **Pengzhen Lin** (ID: 862425101\)
 
-**GitHub Repository:**https://github.com/Linppz/CS131\_Project
+
 
 ---
 
