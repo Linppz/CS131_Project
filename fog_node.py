@@ -103,7 +103,7 @@ def check_alerts(data):
 
 # ===== AI ANALYSIS =====
 def generate_ai_summary():
-    """Build a compact summary of the last 10 minutes for GPT."""
+    """Build a detailed summary of collected data for GPT."""
     data_list = list(history)
     if len(data_list) == 0:
         return None, "No data available yet."
@@ -117,44 +117,103 @@ def generate_ai_summary():
         return None, "No temperature data available."
 
     total = len(data_list)
-    door_open_count = sum(1 for d in doors if d == 1)
-    risk_low = sum(1 for r in risks if r == "LOW")
-    risk_med = sum(1 for r in risks if r == "MEDIUM")
-    risk_high = sum(1 for r in risks if r == "HIGH")
+    time_span_sec = total * 2
+    time_span_min = time_span_sec / 60.0
+    first_time = data_list[0].get("timestamp", "?")
+    last_time = data_list[-1].get("timestamp", "?")
 
-    # Trend: compare first half avg vs second half avg
-    mid = len(temps) // 2
-    if mid > 0:
-        first_avg = sum(temps[:mid]) / mid
-        second_avg = sum(temps[mid:]) / (len(temps) - mid)
-        if second_avg - first_avg > 1:
-            trend = "rising"
-        elif first_avg - second_avg > 1:
-            trend = "falling"
+    # Temperature stats
+    avg_temp = sum(temps) / len(temps)
+    min_temp = min(temps)
+    max_temp = max(temps)
+
+    # Temperature trend (compare first third vs last third)
+    third = len(temps) // 3
+    if third > 0:
+        first_avg = sum(temps[:third]) / third
+        last_avg = sum(temps[-third:]) / third
+        if last_avg - first_avg > 1.5:
+            trend = "rising significantly"
+        elif last_avg - first_avg > 0.5:
+            trend = "rising slightly"
+        elif first_avg - last_avg > 1.5:
+            trend = "falling significantly"
+        elif first_avg - last_avg > 0.5:
+            trend = "falling slightly"
         else:
             trend = "stable"
     else:
         trend = "insufficient data"
 
-    time_span = total * 2  # seconds
-    first_time = data_list[0].get("timestamp", "?")
-    last_time = data_list[-1].get("timestamp", "?")
+    # Temperature exceedance analysis
+    temp_above_30 = sum(1 for t in temps if t > 30.0)
+    temp_above_25 = sum(1 for t in temps if t > 25.0)
+    time_above_30_sec = temp_above_30 * 2
+    time_above_25_sec = temp_above_25 * 2
+    pct_above_30 = (temp_above_30 / len(temps)) * 100 if temps else 0
+    pct_above_25 = (temp_above_25 / len(temps)) * 100 if temps else 0
 
-    summary = """Cold-Chain Monitoring System - Data Summary
-Time range: {} to {} ({} seconds, {} readings)
-Temperature: avg={:.1f}C, min={:.1f}C, max={:.1f}C, trend={}
-Current temperature: {:.1f}C
-Light level: avg={:.0f}, current={}
-Door opened: {} times out of {} readings ({:.0f}% of time)
-Risk distribution: LOW={}, MEDIUM={}, HIGH={}
-Current status: temp={:.1f}C, door={}, risk={}""".format(
-        first_time, last_time, time_span, total,
-        sum(temps)/len(temps), min(temps), max(temps), trend,
+    # Door event analysis
+    door_open_readings = sum(1 for d in doors if d == 1)
+    door_open_time_sec = door_open_readings * 2
+    door_open_pct = (door_open_readings / total) * 100 if total > 0 else 0
+    # Count door open events (transitions from 0 to 1)
+    door_events = 0
+    for i in range(1, len(doors)):
+        if doors[i] == 1 and doors[i-1] == 0:
+            door_events += 1
+    # If first reading is door open, count it
+    if len(doors) > 0 and doors[0] == 1:
+        door_events += 1
+
+    # Risk distribution
+    risk_low = sum(1 for r in risks if r == "LOW")
+    risk_med = sum(1 for r in risks if r == "MEDIUM")
+    risk_high = sum(1 for r in risks if r == "HIGH")
+    risk_low_pct = (risk_low / total) * 100 if total > 0 else 0
+    risk_med_pct = (risk_med / total) * 100 if total > 0 else 0
+    risk_high_pct = (risk_high / total) * 100 if total > 0 else 0
+
+    summary = """Cold-Chain Monitoring System - Detailed Data Report
+=== DATA COLLECTION ===
+Time range: {} to {}
+Duration: {:.1f} minutes ({} seconds)
+Total readings: {} (every 2 seconds)
+
+=== TEMPERATURE ANALYSIS ===
+Current: {:.1f}C
+Average: {:.1f}C | Min: {:.1f}C | Max: {:.1f}C
+Trend: {}
+Time above 30C (DANGER): {} readings = {} seconds ({:.1f}% of monitoring period)
+Time above 25C (CAUTION): {} readings = {} seconds ({:.1f}% of monitoring period)
+
+=== DOOR STATUS ===
+Door open events: {} times
+Total door-open duration: {} seconds ({:.1f}% of monitoring period)
+Current door status: {}
+
+=== RISK LEVEL DISTRIBUTION ===
+LOW (safe): {} readings ({:.1f}%)
+MEDIUM (caution): {} readings ({:.1f}%)
+HIGH (critical): {} readings ({:.1f}%)
+
+=== CURRENT STATUS ===
+Temperature: {:.1f}C | Door: {} | Risk: {} | Light: {}""".format(
+        first_time, last_time,
+        time_span_min, time_span_sec,
+        total,
         temps[-1],
-        sum(lights)/len(lights), lights[-1],
-        door_open_count, total, (door_open_count/total)*100 if total > 0 else 0,
-        risk_low, risk_med, risk_high,
-        temps[-1], "OPEN" if doors[-1] else "CLOSED", risks[-1]
+        avg_temp, min_temp, max_temp,
+        trend,
+        temp_above_30, time_above_30_sec, pct_above_30,
+        temp_above_25, time_above_25_sec, pct_above_25,
+        door_events,
+        door_open_time_sec, door_open_pct,
+        "OPEN" if doors[-1] else "CLOSED",
+        risk_low, risk_low_pct,
+        risk_med, risk_med_pct,
+        risk_high, risk_high_pct,
+        temps[-1], "OPEN" if doors[-1] else "CLOSED", risks[-1], lights[-1]
     )
     return summary, None
 
@@ -170,14 +229,14 @@ def call_openai(summary):
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are an AI analyst for a cold-chain medical storage monitoring system. Analyze the sensor data summary and provide: 1) Current status assessment 2) Any concerns or anomalies 3) Recommendations. Keep response concise (3-5 sentences). Use plain language."
+                    "content": "You are a professional cold-chain monitoring analyst for a medical vaccine storage facility. You receive detailed sensor data reports and must provide a comprehensive analysis. Structure your response as follows:\n\n1. DATA OVERVIEW: How long was data collected, how many readings total.\n2. TEMPERATURE ASSESSMENT: Current temp, trend, how long above danger/caution thresholds. Is the storage unit maintaining safe conditions?\n3. DOOR SECURITY: How many times was the door opened, total open duration. Were any door events concerning?\n4. RISK SUMMARY: What percentage of time was the system in each risk level?\n5. OVERALL VERDICT: Rate the overall cold-chain integrity as PASS, CAUTION, or FAIL with a brief explanation.\n6. RECOMMENDATIONS: 1-2 actionable suggestions if any issues found.\n\nUse clear headings. Be specific with numbers and percentages. Keep total response under 250 words."
                 },
                 {
                     "role": "user",
                     "content": summary
                 }
             ],
-            "max_tokens": 300,
+            "max_tokens": 500,
             "temperature": 0.7
         }
         r = requests.post("https://api.openai.com/v1/chat/completions",
